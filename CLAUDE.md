@@ -23,19 +23,73 @@ The project implements a sophisticated pipeline:
 ```bash
 # Python 3.11+ required (see .python-version)
 uv sync  # Install dependencies with uv
-# OR
-pip install -r requirements.txt  # If requirements.txt exists
 ```
 
-### Running the Application
+### Stage 1: Token Baking and General Translation Training
+
+**1. Bake special tokens into base model:**
 ```bash
-python main.py  # Entry point (currently minimal)
-# OR
-uv run main.py
+uv run python scripts/bake_special_tokens.py
+```
+Output: `./models/base_with_at_tokens/` (262,146 vocab, +2 tokens)
+
+**2. Prepare training dataset:**
+```bash
+uv run python scripts/prepare_datasets.py
+```
+Creates: `./data/processed/general_translation/` with 6,210 train / 690 val examples
+
+**3. Train general translation LoRA:**
+```bash
+uv run python scripts/train_general_lora.py \
+  --base_model ./models/base_with_at_tokens \
+  --dataset ./data/processed/general_translation \
+  --output ./models/adapters/translator-general \
+  --epochs 3 \
+  --batch_size 2 \
+  --learning_rate 5e-5
+```
+Output: `./models/adapters/translator-general/` (Stage 1 complete)
+
+**4. Test the model:**
+```bash
+# Run test suite
+uv run python scripts/test_model.py --mode test
+
+# Interactive testing
+uv run python scripts/test_model.py --mode interactive
+
+# Both test + interactive
+uv run python scripts/test_model.py --mode both
 ```
 
-### ONNX Model Building
+### Stage 2: Game-Specific Training (Pending)
+
+**1. Train game-specific LoRA:**
 ```bash
+# (Not yet implemented)
+uv run python scripts/train_game_lora.py \
+  --base_model ./models/base_with_at_tokens \
+  --dataset ./data/processed/game_translation \
+  --output ./models/adapters/translator-game \
+  --replay_samples 0.2
+```
+
+**2. Merge adapters with weighted combination:**
+```bash
+# (Not yet implemented)
+uv run python scripts/merge_adapters.py \
+  --base ./models/base_with_at_tokens \
+  --adapter_a ./models/adapters/translator-general \
+  --adapter_b ./models/adapters/translator-game \
+  --weights 1.0 1.2 \
+  --combination_type ties \
+  --output ./merged_translator_at
+```
+
+### ONNX Model Building (Future)
+```bash
+# (build_gemma.py not yet implemented)
 uv run build_gemma.py \
   -m ./merged_translator_at \
   -o ./merged_translator_at_onnx \
@@ -98,14 +152,21 @@ Custom `prefix_allowed_tokens_fn` ensures autotext patterns remain valid:
 
 ## Key Scripts Structure
 
-Based on IMPLEMENTATION_GUIDE.md, the expected scripts are:
+**Implemented Scripts:**
 
-- `scripts/bake_special_tokens.py` - Add autotext tokens to base model
-- `scripts/autotext_utils.py` - Normalize/restore autotext patterns
-- `scripts/format_dataset.py` - Format training data with language tags
-- `scripts/lora_config.py` - LoRA configuration setup
-- `scripts/merge_adapters.py` - Weighted adapter merging (TIES/DARE)
-- `scripts/decoding_guard.py` - Constrained decoding for autotext preservation
+- `scripts/bake_special_tokens.py` - Add autotext tokens to base model ✓
+- `scripts/autotext_utils.py` - Normalize/restore autotext patterns ✓
+- `scripts/format_dataset.py` - Format training data with language tags ✓
+- `scripts/lora_config.py` - LoRA configuration setup ✓
+- `scripts/prepare_datasets.py` - Dataset preparation and loading ✓
+- `scripts/train_general_lora.py` - General translation LoRA training (Stage 1) ✓
+- `scripts/test_model.py` - Model testing suite with interactive mode ✓
+
+**Pending Scripts:**
+
+- `scripts/merge_adapters.py` - Weighted adapter merging (TIES/DARE) for Stage 2
+- `scripts/decoding_guard.py` - Constrained decoding for autotext preservation (high priority)
+- `scripts/train_game_lora.py` - Game-specific LoRA training (Stage 2)
 
 ## Data Processing Pipeline
 
@@ -134,13 +195,18 @@ Good morning!오랜만이야~
 
 ## Model Dependencies
 
-Required packages (add to pyproject.toml dependencies):
-- `transformers>=4.43`
-- `peft>=0.12`
-- `datasets`
-- `accelerate`
-- `sentencepiece`
-- `torch`
+Current dependencies (from pyproject.toml):
+- `transformers==4.55.4`
+- `peft>=0.17.1`
+- `datasets>=4.2.0`
+- `accelerate>=1.10.1`
+- `sentencepiece>=0.2.1`
+- `torch>=2.9.0` (with CUDA 12.8 support)
+- `bitsandbytes>=0.48.1` (for 4-bit quantization)
+- `trl>=0.22.2` (for SFTTrainer)
+- `evaluate>=0.4.6`
+- `tensorboard>=2.20.0`
+- `onnx>=1.17.0`, `onnxruntime>=1.23.1` (for future ONNX export)
 
 ## Important Constraints
 
@@ -151,10 +217,39 @@ Required packages (add to pyproject.toml dependencies):
 5. **Apply decoding guard** during inference to prevent pattern corruption
 6. **Include replay samples** when training game-specific LoRA to prevent catastrophic forgetting
 
+## Current Project Status
+
+**Stage 1: General Translation ✓ COMPLETE**
+
+- Token baking: ✓ Complete (262,146 vocab)
+- Dataset preparation: ✓ Complete (6,900 examples, ko↔en, ja↔ko, ko↔ja)
+- General LoRA training: ✓ Complete (3 epochs, checkpoint-2331)
+- Model testing: ✓ Complete (89% translation accuracy, 6 language pairs)
+
+**Test Results Summary:**
+- 16/18 test cases passed with good translation quality
+- Excellent performance on JA↔EN (100%), KO→JA (100%), KO→EN (100%)
+- Issue identified: Autotext token preservation needs decoding guard implementation
+
+**Stage 2: Game-Specific Training (Pending)**
+
+Next steps:
+1. Implement `scripts/decoding_guard.py` (HIGH PRIORITY - autotext preservation)
+2. Collect/prepare FFXIV game-specific translation data
+3. Implement `scripts/train_game_lora.py` with replay samples
+4. Implement `scripts/merge_adapters.py` for weighted LoRA merging
+5. Final evaluation and ONNX export
+
 ## Evaluation Metrics
 
-When testing weighted merge configurations:
-- Autotext preservation rate (regex pattern matching)
+**Implemented:**
+- Manual test suite with 18 test cases across 6 language pairs
+- Translation quality assessment (excellent/good/fair/poor)
+- Language pair-specific success rates
+- Interactive testing mode for ad-hoc validation
+
+**Pending (for Stage 2):**
+- Autotext preservation rate (regex pattern matching) - requires decoding guard
 - Number/bracket/tag preservation accuracy
 - Terminology consistency (glossary matching)
-- COMET / chrF scores
+- COMET / chrF scores for quantitative evaluation
