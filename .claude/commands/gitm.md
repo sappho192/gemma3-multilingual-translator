@@ -1,1 +1,1 @@
-Suggest me a commit message for the staged changes
+Suggest me a commit message for the staged changes, and save it to commit.md

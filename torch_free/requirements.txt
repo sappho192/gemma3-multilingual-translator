@@ -1,0 +1,10 @@
+# Minimal requirements for PyTorch-free ONNX inference
+# No PyTorch needed!
+
+numpy>=1.24.0
+onnxruntime>=1.16.0
+tokenizers>=0.15.0
+sentencepiece>=0.1.99
+
+# Optional: For chat template support (without full transformers)
+# transformers[tokenizers]>=4.36.0

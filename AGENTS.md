@@ -4,7 +4,7 @@ Guidelines for AI coding agents working in this repository.
 
 ## Project Overview
 
-Multilingual translation model (Korean/English/Japanese) using Gemma3-270m with LoRA fine-tuning and Bias-corrected EMA. Training completed on 7.4M examples.
+Multilingual translation model (Korean/English/Japanese) using Gemma3-270m with LoRA fine-tuning and Bias-corrected EMA. Training completed on 7.4M examples. Supports both PyTorch and ONNX inference.
 
 ## Build & Run Commands
 
@@ -41,7 +41,7 @@ uv run python scripts/train_with_ema.py \
   --resume_from_checkpoint ./models/adapters/translator-full-ema/checkpoint-XXXXX
 ```
 
-### Testing
+### Testing (PyTorch)
 ```bash
 # Run test suite
 uv run python scripts/test_simple_translation.py --mode test
@@ -53,6 +53,36 @@ uv run python scripts/test_simple_translation.py --mode interactive
 uv run python scripts/test_simple_translation.py \
   --adapter ./models/adapters/translator-full-ema \
   --mode test
+```
+
+### ONNX Conversion
+```bash
+# Convert LoRA adapter to ONNX
+uv run python scripts/convert_to_onnx.py \
+  --adapter ./models/adapters/translator-full-ema \
+  --output ./models/onnx/translator \
+  --precision fp32 q4
+
+# Available precisions: fp32, fp16, q4, q4f16
+```
+
+### Testing (ONNX - No PyTorch)
+```bash
+# Run ONNX test suite
+uv run python scripts/test_onnx_translation.py \
+  --model_dir ./models/onnx/translator \
+  --precision q4 \
+  --mode test
+
+# ONNX interactive mode
+uv run python scripts/test_onnx_translation.py \
+  --model_dir ./models/onnx/translator \
+  --mode interactive
+
+# ONNX benchmark
+uv run python scripts/test_onnx_translation.py \
+  --model_dir ./models/onnx/translator \
+  --mode benchmark
 ```
 
 ### Run Single Script
@@ -72,10 +102,25 @@ scripts/
 ├── prepare_simple_translation.py  # Dataset preparation
 ├── train_simple_translation.py    # Basic training
 ├── train_with_ema.py              # Training with EMA (primary)
-├── test_simple_translation.py     # Model testing
+├── test_simple_translation.py     # PyTorch model testing
+├── convert_to_onnx.py             # ONNX conversion
+├── test_onnx_translation.py       # ONNX model testing
 ├── ema_utils.py                   # EMA implementation
 ├── lora_config.py                 # LoRA/quantization config
 └── deprecated/                    # Old autotext scripts
+
+torch_free/
+├── __init__.py
+├── requirements.txt               # Minimal deps for ONNX inference
+├── inference/
+│   ├── __init__.py
+│   ├── translator_inference.py    # Main TranslatorInferencer class
+│   ├── gemma_session.py           # ONNX Runtime session manager
+│   ├── gemma_tokenizer.py         # Tokenizer wrapper
+│   ├── kv_cache.py                # KV cache management
+│   └── generation.py              # Greedy/sampling algorithms
+└── examples/
+    └── simple_translate.py        # Usage example
 ```
 
 ### Imports
@@ -157,6 +202,18 @@ with torch.no_grad():
     outputs = model.generate(**inputs, max_new_tokens=128)
 ```
 
+### ONNX Best Practices
+- Use numpy arrays with explicit dtypes (int64, float32)
+- Initialize KV cache with zeros for first inference step
+- Use q4 precision for best speed/size tradeoff
+
+```python
+from torch_free.inference import TranslatorInferencer
+
+translator = TranslatorInferencer("./models/onnx/translator", precision="q4")
+result = translator.translate("Hello", src_lang="en", tgt_lang="ko")
+```
+
 ## Translation Format
 
 Input/output format used throughout the codebase:
@@ -182,13 +239,30 @@ Language codes: `ko`, `en`, `ja`
 | Batch Size | 4 | Per-device batch size |
 | Learning Rate | 5e-5 | AdamW learning rate |
 
+## ONNX Model Specifications
+
+| Precision | Model Size | Avg. Latency | Notes |
+|-----------|------------|--------------|-------|
+| fp32 | 1.1 GB | 0.26s | Best accuracy |
+| fp16 | ~600 MB | ~0.20s | Good balance |
+| q4 | 764 MB | 0.17s | Recommended for deployment |
+| q4f16 | ~400 MB | ~0.15s | Smallest, fastest |
+
 ## Dependencies
 
+### Full (Training + PyTorch)
 - Python 3.11+
 - PyTorch 2.9+ with CUDA 12.8
 - transformers 4.55.4
 - peft >= 0.17.1
 - trl >= 0.22.2
+- onnx-ir >= 0.1.11 (for conversion)
+
+### Minimal (ONNX Inference)
+- Python 3.11+
+- numpy >= 1.24.0
+- onnxruntime >= 1.16.0
+- tokenizers >= 0.15.0
 
 ## Important Notes
 
@@ -197,10 +271,24 @@ Language codes: `ko`, `en`, `ja`
 3. **Checkpointing**: Training can be interrupted and resumed from checkpoints
 4. **GPU Memory**: ~7GB VRAM with 4-bit quantization
 5. **Deprecated**: `scripts/deprecated/` contains old autotext-based code (do not use)
+6. **ONNX Conversion**: Requires PyTorch to merge LoRA weights before export
+7. **ONNX Inference**: No PyTorch needed after conversion - uses ONNX Runtime only
 
 ## Testing Changes
 
 Before committing:
-1. Run test suite: `uv run python scripts/test_simple_translation.py --mode test`
-2. Verify model loads correctly
-3. Check translation quality on sample inputs
+
+### PyTorch Model
+```bash
+uv run python scripts/test_simple_translation.py --mode test
+```
+
+### ONNX Model
+```bash
+uv run python scripts/test_onnx_translation.py \
+  --model_dir ./models/onnx/translator \
+  --precision q4 \
+  --mode test
+```
+
+Both should report "All PASSED" for the translation tests.
