@@ -55,6 +55,15 @@ uv run python scripts/test_simple_translation.py \
   --mode test
 ```
 
+### Merge to SafeTensors
+```bash
+# Merge LoRA adapter with base model
+uv run python scripts/merge_lora_to_safetensor.py \
+  --adapter ./models/adapters/translator-full-ema \
+  --output ./models/merged/translator-full \
+  --dtype bfloat16
+```
+
 ### ONNX Conversion
 ```bash
 # Convert LoRA adapter to ONNX
@@ -103,6 +112,7 @@ scripts/
 ├── train_simple_translation.py    # Basic training
 ├── train_with_ema.py              # Training with EMA (primary)
 ├── test_simple_translation.py     # PyTorch model testing
+├── merge_lora_to_safetensor.py    # Merge LoRA to SafeTensors
 ├── convert_to_onnx.py             # ONNX conversion
 ├── test_onnx_translation.py       # ONNX model testing
 ├── ema_utils.py                   # EMA implementation

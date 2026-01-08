@@ -103,6 +103,38 @@ Language codes: `ko` (Korean), `en` (English), `ja` (Japanese)
 | JA→KO | こんにちは、お元気ですか？ | 안녕하세요, 건강하세요? |
 | KO→JA | 오늘 날씨가 정말 좋네요. | 今日の天気は本当にいいですね。 |
 
+## Merged Model
+
+Merge LoRA adapter with base model for standalone deployment:
+
+```bash
+uv run python scripts/merge_lora_to_safetensor.py \
+  --adapter ./models/adapters/translator-full-ema \
+  --output ./models/merged/translator-full
+```
+
+### Python API (Merged Model)
+
+```python
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+model = AutoModelForCausalLM.from_pretrained(
+    './models/merged/translator-full',
+    torch_dtype=torch.bfloat16,
+    device_map='auto'
+)
+tokenizer = AutoTokenizer.from_pretrained('./models/merged/translator-full')
+
+prompt = "<src:ko><tgt:en>\n안녕하세요\n###\n"
+inputs = tokenizer(prompt, return_tensors='pt').to(model.device)
+
+with torch.no_grad():
+    outputs = model.generate(**inputs, max_new_tokens=128)
+
+print(tokenizer.decode(outputs[0], skip_special_tokens=True).split('###')[-1].strip())
+```
+
 ## ONNX Conversion
 
 Convert the LoRA model to ONNX for PyTorch-free deployment:
@@ -165,6 +197,7 @@ gemma3-multilingual-translator/
 │   ├── prepare_simple_translation.py  # Dataset preparation
 │   ├── train_with_ema.py              # Training with EMA
 │   ├── test_simple_translation.py     # PyTorch model testing
+│   ├── merge_lora_to_safetensor.py    # Merge LoRA to SafeTensors
 │   ├── convert_to_onnx.py             # ONNX conversion
 │   ├── test_onnx_translation.py       # ONNX model testing
 │   ├── ema_utils.py                   # EMA implementation
@@ -179,6 +212,7 @@ gemma3-multilingual-translator/
 │   └── requirements.txt               # Minimal dependencies
 ├── models/
 │   ├── adapters/translator-full-ema/  # LoRA adapter
+│   ├── merged/translator-full/        # Merged SafeTensors model
 │   └── onnx/translator/               # ONNX models
 └── data/processed/                    # Prepared datasets
 ```

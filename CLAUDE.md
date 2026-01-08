@@ -76,6 +76,16 @@ uv run python scripts/test_simple_translation.py \
   --mode interactive
 ```
 
+### Merge to SafeTensors
+
+```bash
+# Merge LoRA adapter with base model
+uv run python scripts/merge_lora_to_safetensor.py \
+  --adapter ./models/adapters/translator-full-ema \
+  --output ./models/merged/translator-full \
+  --dtype bfloat16
+```
+
 ### ONNX Conversion
 
 ```bash
@@ -117,6 +127,7 @@ gemma3-multilingual-translator/
 │   ├── train_simple_translation.py    # Basic training (no EMA)
 │   ├── train_with_ema.py              # Training with EMA (recommended)
 │   ├── test_simple_translation.py     # PyTorch model testing
+│   ├── merge_lora_to_safetensor.py    # Merge LoRA to SafeTensors
 │   ├── convert_to_onnx.py             # ONNX conversion
 │   ├── test_onnx_translation.py       # ONNX model testing
 │   ├── ema_utils.py                   # EMA implementation
@@ -138,6 +149,8 @@ gemma3-multilingual-translator/
 ├── models/
 │   ├── adapters/
 │   │   └── translator-full-ema/       # LoRA adapter
+│   ├── merged/
+│   │   └── translator-full/           # Merged SafeTensors model
 │   └── onnx/
 │       └── translator/                # ONNX models
 ├── docs/                              # Documentation archive
@@ -231,6 +244,28 @@ with torch.no_grad():
 result = tokenizer.decode(outputs[0], skip_special_tokens=True)
 translation = result.split('###')[-1].strip()
 print(translation)
+```
+
+### Merged Model API
+
+```python
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+model = AutoModelForCausalLM.from_pretrained(
+    './models/merged/translator-full',
+    torch_dtype=torch.bfloat16,
+    device_map='auto'
+)
+tokenizer = AutoTokenizer.from_pretrained('./models/merged/translator-full')
+
+prompt = "<src:ko><tgt:en>\n안녕하세요\n###\n"
+inputs = tokenizer(prompt, return_tensors='pt').to(model.device)
+
+with torch.no_grad():
+    outputs = model.generate(**inputs, max_new_tokens=128)
+
+print(tokenizer.decode(outputs[0], skip_special_tokens=True).split('###')[-1].strip())
 ```
 
 ### ONNX API (No PyTorch)
